@@ -1,0 +1,47 @@
+# Development: single replica, relaxed resources, NodePort, persistence + ConfigMap checksum (Lab 12)
+replicaCount: 2
+
+config:
+  checksumAnnotation: true
+  mountPath: /config/config.json
+
+configMapEnv:
+  APP_ENV: "development"
+  LOG_LEVEL: "debug"
+
+persistence:
+  enabled: true
+  size: 100Mi
+  storageClass: ""
+
+image:
+  tag: latest
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+service:
+  type: NodePort
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 3
+  periodSeconds: 5
+  timeoutSeconds: 2
+  failureThreshold: 3
