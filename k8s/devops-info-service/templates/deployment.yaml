@@ -1,0 +1,96 @@
+{{- if and (not .Values.rollouts.enabled) (not .Values.statefulset.enabled) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "common-lib.fullname" . }}
+  labels:
+    {{- include "common-lib.labels" . | nindent 4 }}
+    {{- range $k, $v := .Values.podLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    {{- toYaml .Values.strategy | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "common-lib.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "common-lib.selectorLabels" . | nindent 8 }}
+        {{- range $k, $v := .Values.podLabels }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
+      {{- if or .Values.podAnnotations .Values.vault.enabled .Values.config.checksumAnnotation }}
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if .Values.config.checksumAnnotation }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if .Values.vault.enabled }}
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: {{ .Values.vault.role | quote }}
+        vault.hashicorp.com/agent-inject-secret-{{ .Values.vault.secretFileName }}: {{ .Values.vault.secretPath | quote }}
+        {{- if .Values.vault.bonusAgentTemplate }}
+        vault.hashicorp.com/agent-inject-template-{{ .Values.vault.secretFileName }}: |
+{{ (coalesce (.Files.Get "files/vault-agent-config.ctmpl") (.Files.Get "vault-agent-config.ctmpl")) | nindent 10 }}
+        {{- end }}
+        {{- end }}
+      {{- end }}
+    spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ include "devops-info-service.serviceAccountName" . }}
+      {{- end }}
+      volumes:
+        - name: app-config
+          configMap:
+            name: {{ include "common-lib.fullname" . }}-config-file
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "common-lib.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      containers:
+        - name: {{ include "common-lib.fullname" . }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: {{ .Values.container.portName }}
+              containerPort: {{ .Values.container.port }}
+              protocol: TCP
+          volumeMounts:
+            - name: app-config
+              mountPath: /config
+              readOnly: true
+            - name: data
+              mountPath: /data
+          env:
+            {{- toYaml .Values.env | nindent 12 }}
+            {{- include "devops-info-service.extraEnv" . | nindent 12 }}
+            - name: VISITS_FILE
+              value: {{ .Values.visits.filePath | quote }}
+            - name: CONFIG_JSON_PATH
+              value: {{ .Values.config.mountPath | quote }}
+          {{- if or .Values.secrets.enabled (and .Values.configMapEnv (gt (len .Values.configMapEnv) 0)) }}
+          envFrom:
+          {{- if and .Values.configMapEnv (gt (len .Values.configMapEnv) 0) }}
+            - configMapRef:
+                name: {{ include "common-lib.fullname" . }}-env
+          {{- end }}
+          {{- if .Values.secrets.enabled }}
+            - secretRef:
+                name: {{ include "common-lib.fullname" . }}-credentials
+          {{- end }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+{{- end }}
