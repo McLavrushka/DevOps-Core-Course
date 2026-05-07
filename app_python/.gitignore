@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+venv/
+*.log
+.DS_Store
+# Lab 12: docker-compose bind mount for visit counter
+data/
